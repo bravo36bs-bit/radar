@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quantum Tracker v6.0 - FREE EDITION</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { background-color: #000; color: #ff4500; display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; font-family: 'Courier New', monospace; padding: 15px; overflow-x: hidden; }
+        
+        h2 { letter-spacing: 2px; margin-bottom: 10px; font-size: 1.3rem; text-shadow: 0 0 10px #ff4500; }
+
+        /* الرادار */
+        .radar-container { 
+            position: relative; width: 220px; height: 220px; 
+            border: 2px solid #ff4500; border-radius: 50%; 
+            background: radial-gradient(circle, #1a0500 0%, #000 80%); 
+            box-shadow: 0 0 15px #ff4500; margin-bottom: 10px; overflow: hidden;
+        }
+
+        .scanner { 
+            position: absolute; width: 50%; height: 50%; 
+            background: linear-gradient(0deg, transparent 0%, rgba(255, 69, 0, 0.4) 100%); 
+            top: 0; left: 50%; transform-origin: bottom left; 
+            animation: rotate 2s linear infinite; border-left: 2px solid #ff4500; z-index: 2;
+        }
+
+        #target-dot {
+            position: absolute; width: 10px; height: 10px;
+            background-color: #fff; border-radius: 50%;
+            box-shadow: 0 0 12px #fff; display: none; z-index: 3;
+        }
+
+        @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        
+        /* الخريطة */
+        #map {
+            width: 100%; height: 250px;
+            border: 1px solid #ff4500; border-radius: 10px;
+            margin: 10px 0; background: #111;
+        }
+
+        /* المدخلات */
+        .ui-panel { width: 100%; display: flex; flex-direction: column; gap: 10px; }
+        input { width: 100%; padding: 12px; background: #111; border: 1px solid #ff4500; color: #fff; text-align: center; border-radius: 5px; box-sizing: border-box; font-family: inherit; }
+        button { width: 100%; padding: 15px; background: transparent; color: #ff4500; border: 2px solid #ff4500; font-weight: bold; cursor: pointer; text-transform: uppercase; }
+        button:active { background: #ff4500; color: #000; }
+
+        #info { font-size: 0.9rem; margin-bottom: 5px; color: #fff; text-align: center; }
+        
+        /* تنسيق اسم المكان */
+        .custom-label {
+            background: rgba(255, 69, 0, 0.9) !important;
+            color: white !important; border: 1px solid white !important;
+            font-weight: bold; padding: 2px 8px; border-radius: 4px;
+        }
+        .leaflet-control-attribution { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <h2>QUANTUM TRACKER v6.0</h2>
+    
+    <div class="radar-container">
+        <div class="scanner"></div>
+        <div id="target-dot"></div>
+        <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:60%; height:60%; border:1px solid rgba(255,69,0,0.2); border-radius:50%;"></div>
+    </div>
+
+    <div id="info">النظام: جاهز للمسح</div>
+    
+    <div id="map"></div>
+
+    <div class="ui-panel">
+        <input type="text" id="targetType" placeholder="اكتب نوع المكان (مطعم، مقهى...)">
+        <button onclick="startFreeTracking()">بدء التتبع المجاني</button>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        let map, userMarker, targetMarker, watchID;
+        let targetLat, targetLon;
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playBeep(f) {
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.frequency.value = f;
+            g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+            o.connect(g); g.connect(audioCtx.destination);
+            o.start(); o.stop(audioCtx.currentTime + 0.2);
+        }
+
+        async function startFreeTracking() {
+            const type = document.getElementById('targetType').value || "restaurant";
+            document.getElementById('info').innerText = "جاري البحث عن أهداف حقيقية...";
+
+            navigator.geolocation.getCurrentPosition(async (pos) => {
+                const uLat = pos.coords.latitude;
+                const uLon = pos.coords.longitude;
+
+                // إعداد الخريطة إذا لم تكن موجودة
+                if (!map) {
+                    map = L.map('map').setView([uLat, uLon], 16);
+                    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+                    userMarker = L.circleMarker([uLat, uLon], {color: '#00ccff', radius: 6}).addTo(map);
+                }
+
+                // البحث عن أماكن حقيقية (Overpass API مجاني)
+                const query = `[out:json];node["amenity"~"restaurant|cafe|pharmacy|mall"](around:1500,${uLat},${uLon});out;`;
+                try {
+                    const res = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
+                    const data = await res.json();
+
+                    if (data.elements.length > 0) {
+                        const target = data.elements[Math.floor(Math.random() * data.elements.length)];
+                        targetLat = target.lat;
+                        targetLon = target.lon;
+                        const name = target.tags.name || "هدف غير مسمى";
+
+                        // تحديث الخريطة
+                        if (targetMarker) map.removeLayer(targetMarker);
+                        targetMarker = L.circleMarker([targetLat, targetLon], {color: '#fff', fillColor: '#ff4500', fillOpacity:1, radius: 8}).addTo(map);
+                        targetMarker.bindTooltip(name, {permanent: true, className: 'custom-label'}).openTooltip();
+
+                        document.getElementById('target-dot').style.display = 'block';
+                        document.getElementById('info').innerText = `تم قفل الهدف: ${name}`;
+                        playBeep(800);
+
+                        // بدء التتبع اللحظي
+                        if (watchID) navigator.geolocation.clearWatch(watchID);
+                        watchID = navigator.geolocation.watchPosition(updateUI, null, {enableHighAccuracy: true});
+                    } else {
+                        document.getElementById('info').innerText = "لم يتم العثور على أماكن قريبة.";
+                    }
+                } catch (e) {
+                    document.getElementById('info').innerText = "خطأ في الشبكة. حاول مرة أخرى.";
+                }
+            });
+        }
+
+        function updateUI(pos) {
+            const uLat = pos.coords.latitude;
+            const uLon = pos.coords.longitude;
+
+            userMarker.setLatLng([uLat, uLon]);
+            map.panTo([uLat, uLon]);
+
+            // حساب المسافة
+            const d = Math.sqrt(Math.pow((uLat-targetLat)*111320, 2) + Math.pow((uLon-targetLon)*111320, 2));
+            document.getElementById('info').innerText = `المسافة الحقيقية: ${Math.round(d)} متر`;
+
+            // تحديث الرادار
+            let x = 110 + (targetLon - uLon) * 60000 * 0.6;
+            let y = 110 - (targetLat - uLat) * 60000 * 0.6;
+            const dot = document.getElementById('target-dot');
+            dot.style.left = Math.min(200, Math.max(10, x)) + 'px';
+            dot.style.top = Math.min(200, Math.max(10, y)) + 'px';
+
+            if (d < 100) playBeep(1200);
+        }
+    </script>
+</body>
+</html>
