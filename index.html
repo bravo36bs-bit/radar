@@ -1,164 +1,241 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quantum Tracker v6.0 - FREE EDITION</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Quantum Tactical Tracker v4.0 - Active Navigation</title>
+    
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
     <style>
-        body { background-color: #000; color: #ff4500; display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; font-family: 'Courier New', monospace; padding: 15px; overflow-x: hidden; }
+        body { margin: 0; padding: 0; background: #000; font-family: 'Courier New', monospace; color: #00ff00; overflow: hidden; }
+        #map { height: 100vh; width: 100vw; filter: brightness(0.4) contrast(1.3) saturate(0.5); z-index: 1; }
+
+        /* Tactical HUD Background */
+        #radar-hud {
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+            pointer-events: none; z-index: 2;
+            background: radial-gradient(circle at center, transparent 30%, rgba(0, 20, 0, 0.2) 100%);
+        }
         
-        h2 { letter-spacing: 2px; margin-bottom: 10px; font-size: 1.3rem; text-shadow: 0 0 10px #ff4500; }
-
-        /* الرادار */
-        .radar-container { 
-            position: relative; width: 220px; height: 220px; 
-            border: 2px solid #ff4500; border-radius: 50%; 
-            background: radial-gradient(circle, #1a0500 0%, #000 80%); 
-            box-shadow: 0 0 15px #ff4500; margin-bottom: 10px; overflow: hidden;
+        /* HUD - Control Panel */
+        .hud-control {
+            position: absolute; top: 20px; left: 20px; z-index: 1000;
+            background: rgba(0, 15, 0, 0.85); border: 1px solid #00ff00;
+            padding: 15px; width: 280px; box-shadow: 0 0 10px rgba(0,255,0,0.2);
         }
 
-        .scanner { 
-            position: absolute; width: 50%; height: 50%; 
-            background: linear-gradient(0deg, transparent 0%, rgba(255, 69, 0, 0.4) 100%); 
-            top: 0; left: 50%; transform-origin: bottom left; 
-            animation: rotate 2s linear infinite; border-left: 2px solid #ff4500; z-index: 2;
+        /* HUD - Target Data */
+        .hud-target {
+            position: absolute; bottom: 30px; right: 20px; z-index: 1000;
+            background: rgba(0, 5, 0, 0.95); border: 1px solid #00ff00;
+            padding: 15px; min-width: 300px; display: none;
         }
 
-        #target-dot {
-            position: absolute; width: 10px; height: 10px;
-            background-color: #fff; border-radius: 50%;
-            box-shadow: 0 0 12px #fff; display: none; z-index: 3;
+        /* Compass */
+        #compass {
+            position: absolute; top: 20px; right: 20px; z-index: 1000;
+            width: 80px; height: 80px; border: 1px solid #00ff00; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; font-size: 0.8rem;
         }
 
-        @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        
-        /* الخريطة */
-        #map {
-            width: 100%; height: 250px;
-            border: 1px solid #ff4500; border-radius: 10px;
-            margin: 10px 0; background: #111;
+        input, select {
+            background: #000; color: #00ff00; border: 1px solid #004400;
+            width: 100%; margin: 8px 0; padding: 6px; font-family: monospace; outline: none;
         }
 
-        /* المدخلات */
-        .ui-panel { width: 100%; display: flex; flex-direction: column; gap: 10px; }
-        input { width: 100%; padding: 12px; background: #111; border: 1px solid #ff4500; color: #fff; text-align: center; border-radius: 5px; box-sizing: border-box; font-family: inherit; }
-        button { width: 100%; padding: 15px; background: transparent; color: #ff4500; border: 2px solid #ff4500; font-weight: bold; cursor: pointer; text-transform: uppercase; }
-        button:active { background: #ff4500; color: #000; }
-
-        #info { font-size: 0.9rem; margin-bottom: 5px; color: #fff; text-align: center; }
-        
-        /* تنسيق اسم المكان */
-        .custom-label {
-            background: rgba(255, 69, 0, 0.9) !important;
-            color: white !important; border: 1px solid white !important;
-            font-weight: bold; padding: 2px 8px; border-radius: 4px;
+        .btn-scan {
+            background: #00ff00; color: #000; border: none; padding: 12px;
+            width: 100%; cursor: pointer; font-weight: bold; text-transform: uppercase;
         }
-        .leaflet-control-attribution { display: none !important; }
+
+        .btn-unlock {
+            background: rgba(255, 0, 0, 0.1); color: #ff4444; border: 1px solid #ff4444;
+            padding: 8px; width: 100%; cursor: pointer; font-weight: bold; margin-top: 10px;
+        }
+
+        .data-row { display: flex; justify-content: space-between; margin: 4px 0; }
+        .blink-red { color: #ff0000; font-weight: bold; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
     </style>
 </head>
 <body>
 
-    <h2>QUANTUM TRACKER v6.0</h2>
+<div id="radar-hud"></div>
+
+<div class="hud-control">
+    <div style="font-size: 0.7rem; opacity: 0.6; margin-bottom: 5px;">ACTIVE TACTICAL TRACKER v4.0</div>
+    <div>SATELLITE LINK: <span id="link-status" style="color:#ff0000">DISCONNECTED</span></div>
     
-    <div class="radar-container">
-        <div class="scanner"></div>
-        <div id="target-dot"></div>
-        <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:60%; height:60%; border:1px solid rgba(255,69,0,0.2); border-radius:50%;"></div>
-    </div>
-
-    <div id="info">النظام: جاهز للمسح</div>
+    <label style="margin-top:10px;display:block;">SCAN RANGE: <span id="rangeVal">1000</span>M</label>
+    <input type="range" id="rangeInput" min="50" max="10000" step="100" value="1000">
     
-    <div id="map"></div>
+    <label>OBJECT CLASS:</label>
+    <select id="targetClass">
+        <option value="restaurant">RESTAURANTS</option>
+        <option value="cafe">CAFE / HUBS</option>
+        <option value="bank">FINANCIAL</option>
+        <option value="pharmacy">MEDICAL</option>
+    </select>
+    
+    <label>CUSTOM SEARCH:</label>
+    <input type="text" id="customSearch" placeholder="Type any tag (e.g. cafe near Amman)">
 
-    <div class="ui-panel">
-        <input type="text" id="targetType" placeholder="اكتب نوع المكان (مطعم، مقهى...)">
-        <button onclick="startFreeTracking()">بدء التتبع المجاني</button>
-    </div>
+    <button class="btn-scan" onclick="initiateScan()">Initiate Scan</button>
+</div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script>
-        let map, userMarker, targetMarker, watchID;
-        let targetLat, targetLon;
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+<div id="compass">
+    <span id="gyroDeg">000</span>° <span id="headingDir">N</span>
+</div>
 
-        function playBeep(f) {
-            const o = audioCtx.createOscillator();
-            const g = audioCtx.createGain();
-            o.frequency.value = f;
-            g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
-            o.connect(g); g.connect(audioCtx.destination);
-            o.start(); o.stop(audioCtx.currentTime + 0.2);
+<div class="hud-target" id="targetPanel">
+    <div class="blink-red">>> OBJECT DETECTED</div>
+    <div class="data-row"><span>ID:</span> <span id="targetName" style="color:#fff">---</span></div>
+    <div class="data-row"><span>RANGE:</span> <span id="targetDist">0</span> M</div>
+    <div class="data-row"><span>BEARING:</span> <span id="targetAz">000</span>°</div>
+    <button class="btn-unlock" onclick="unlockTarget()">Release Target</button>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+    const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([31.95, 35.91], 17);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(map);
+
+    let userCoords = [31.95, 35.91], watchId = null;
+    let targetCoords = null, targetMarker = null, lockLine = null, userMarker = null;
+
+    // --- Audio System ---
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playTone(freq, dur, type='sine', gain=0.08) {
+        const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+        o.type=type; o.frequency.value=freq; g.gain.setValueAtTime(gain, audioCtx.currentTime);
+        o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+dur);
+    }
+
+    function speak(text) {
+        window.speechSynthesis.cancel();
+        const m = new SpeechSynthesisUtterance(text);
+        m.lang = 'en-US'; m.pitch = 0.7; m.rate = 1.0;
+        window.speechSynthesis.speak(m);
+    }
+
+    // --- Geolocation & Gyroscope ---
+    function startTracking() {
+        watchId = navigator.geolocation.watchPosition(updateUserLocation, locationError, {
+            enableHighAccuracy: true, maximumAge: 1000, timeout: 5000
+        });
+        document.getElementById('link-status').innerText = 'CONNECTED';
+        document.getElementById('link-status').style.color = '#00ff00';
+        speak("Strategic Satellite Link Established.");
+    }
+
+    function updateUserLocation(position) {
+        userCoords = [position.coords.latitude, position.coords.longitude];
+        
+        if(!userMarker) {
+            userMarker = L.circleMarker(userCoords, { color: '#00ff00', radius: 4, fillOpacity: 1 }).addTo(map);
+            map.setView(userCoords, 17);
+        } else {
+            userMarker.setLatLng(userCoords);
         }
-
-        async function startFreeTracking() {
-            const type = document.getElementById('targetType').value || "restaurant";
-            document.getElementById('info').innerText = "جاري البحث عن أهداف حقيقية...";
-
-            navigator.geolocation.getCurrentPosition(async (pos) => {
-                const uLat = pos.coords.latitude;
-                const uLon = pos.coords.longitude;
-
-                // إعداد الخريطة إذا لم تكن موجودة
-                if (!map) {
-                    map = L.map('map').setView([uLat, uLon], 16);
-                    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
-                    userMarker = L.circleMarker([uLat, uLon], {color: '#00ccff', radius: 6}).addTo(map);
-                }
-
-                // البحث عن أماكن حقيقية (Overpass API مجاني)
-                const query = `[out:json];node["amenity"~"restaurant|cafe|pharmacy|mall"](around:1500,${uLat},${uLon});out;`;
-                try {
-                    const res = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
-                    const data = await res.json();
-
-                    if (data.elements.length > 0) {
-                        const target = data.elements[Math.floor(Math.random() * data.elements.length)];
-                        targetLat = target.lat;
-                        targetLon = target.lon;
-                        const name = target.tags.name || "هدف غير مسمى";
-
-                        // تحديث الخريطة
-                        if (targetMarker) map.removeLayer(targetMarker);
-                        targetMarker = L.circleMarker([targetLat, targetLon], {color: '#fff', fillColor: '#ff4500', fillOpacity:1, radius: 8}).addTo(map);
-                        targetMarker.bindTooltip(name, {permanent: true, className: 'custom-label'}).openTooltip();
-
-                        document.getElementById('target-dot').style.display = 'block';
-                        document.getElementById('info').innerText = `تم قفل الهدف: ${name}`;
-                        playBeep(800);
-
-                        // بدء التتبع اللحظي
-                        if (watchID) navigator.geolocation.clearWatch(watchID);
-                        watchID = navigator.geolocation.watchPosition(updateUI, null, {enableHighAccuracy: true});
-                    } else {
-                        document.getElementById('info').innerText = "لم يتم العثور على أماكن قريبة.";
-                    }
-                } catch (e) {
-                    document.getElementById('info').innerText = "خطأ في الشبكة. حاول مرة أخرى.";
-                }
-            });
+        
+        if(targetCoords) {
+            // تحديث المسافة والاتجاه لحظياً عند الحركة
+            const dist = Math.round(map.distance(userCoords, targetCoords));
+            const az = Math.round((Math.atan2(targetCoords[1] - userCoords[1], targetCoords[0] - userCoords[0]) * 180 / Math.PI + 360) % 360);
+            
+            document.getElementById('targetDist').innerText = dist;
+            document.getElementById('targetAz').innerText = az.toString().padStart(3, '0');
+            
+            // إعادة رسم خط التثبيت
+            lockLine.setLatLngs([userCoords, targetCoords]);
+            
+            // تنبيه صوتي عند الاقتراب (كل 20 متر)
+            if(dist % 20 === 0 && dist <= 200 && dist > 0) {
+                speak(`Distance to objective: ${dist} meters.`);
+                playTone(1500, 0.05);
+            }
         }
+    }
 
-        function updateUI(pos) {
-            const uLat = pos.coords.latitude;
-            const uLon = pos.coords.longitude;
+    function locationError(error) {
+        speak("Satellite connection weak.");
+    }
 
-            userMarker.setLatLng([uLat, uLon]);
-            map.panTo([uLat, uLon]);
-
-            // حساب المسافة
-            const d = Math.sqrt(Math.pow((uLat-targetLat)*111320, 2) + Math.pow((uLon-targetLon)*111320, 2));
-            document.getElementById('info').innerText = `المسافة الحقيقية: ${Math.round(d)} متر`;
-
-            // تحديث الرادار
-            let x = 110 + (targetLon - uLon) * 60000 * 0.6;
-            let y = 110 - (targetLat - uLat) * 60000 * 0.6;
-            const dot = document.getElementById('target-dot');
-            dot.style.left = Math.min(200, Math.max(10, x)) + 'px';
-            dot.style.top = Math.min(200, Math.max(10, y)) + 'px';
-
-            if (d < 100) playBeep(1200);
+    window.addEventListener('deviceorientation', (event) => {
+        const alpha = event.alpha || event.webkitCompassHeading;
+        if(alpha) {
+            const rounded = Math.round(alpha);
+            document.getElementById('gyroDeg').innerText = rounded.toString().padStart(3, '0');
+            // تدوير واجهة الـ HUD
+            document.getElementById('radar-hud').style.transform = `rotate(-${rounded}deg)`;
         }
-    </script>
+    });
+
+    // --- Scan & Search ---
+    async function initiateScan() {
+        const range = document.getElementById('rangeInput').value;
+        const classTag = document.getElementById('targetClass').value;
+        const customQuery = document.getElementById('customSearch').value.trim();
+        
+        unlockTarget(false); 
+        playTone(600, 0.1);
+
+        let query;
+        if(customQuery) {
+            query = `[out:json];node(around:${range},${userCoords[0]},${userCoords[1]})[name~"${customQuery}",i];out;`;
+            speak(`Searching perimeter for custom objective: ${customQuery}`);
+        } else {
+            query = `[out:json];node(around:${range},${userCoords[0]},${userCoords[1]})["amenity"="${classTag}"];out;`;
+            speak("Initiating perimeter scan.");
+        }
+        
+        try {
+            const response = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
+            const data = await response.json();
+
+            if (data.elements.length > 0) {
+                const target = data.elements[Math.floor(Math.random() * data.elements.length)];
+                targetCoords = [target.lat, target.lon];
+                const name = target.tags.name || "Classified Object";
+                
+                setTimeout(() => {
+                    targetMarker = L.circleMarker(targetCoords, { color: '#ff0000', radius: 10, weight: 2 }).addTo(map);
+                    lockLine = L.polyline([userCoords, targetCoords], { color: '#00ff00', weight: 1, dashArray: '5, 10' }).addTo(map);
+                    
+                    document.getElementById('targetPanel').style.display = 'block';
+                    document.getElementById('targetName').innerText = name;
+                    
+                    updateUserLocation({coords: {latitude: userCoords[0], longitude: userCoords[1]}}); // تحديث فوري للأرقام
+
+                    playTone(1200, 0.05, 'square'); setTimeout(() => playTone(1500, 0.3, 'square'), 100);
+                    speak(`Objective detected. ${name}. Initiating tactical guidance.`);
+                    map.fitBounds(lockLine.getBounds(), { padding: [100, 100] });
+                }, 1800);
+            } else {
+                speak("Zero objectives found.");
+            }
+        } catch (e) {
+            speak("Signal interference. Scan failed.");
+        }
+    }
+
+    function unlockTarget(withVoice = true) {
+        if(targetMarker) map.removeLayer(targetMarker);
+        if(lockLine) map.removeLayer(lockLine);
+        targetCoords = null;
+        document.getElementById('targetPanel').style.display = 'none';
+        if(withVoice) {
+            playTone(300, 0.3, 'sawtooth', 0.15);
+            speak("Objective released. Returning to standby.");
+        }
+    }
+
+    startTracking(); // بدء التشغيل
+    document.getElementById('rangeInput').oninput = function() { document.getElementById('rangeVal').innerText = this.value; };
+</script>
 </body>
 </html>
